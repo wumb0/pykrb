@@ -1,25 +1,21 @@
 """ Server implementation """
-from datetime import datetime, timedelta
-#from twisted.spread.jelly import jelly, unjelly
-from pickle import loads, dumps
-import sys
-import socket
 from kerberos import *
+from twisted.internet.protocol import Protocol, Factory
+from twisted.internet.endpoints import TCP4ServerEndpoint
+from twisted.internet import reactor
+
+class KerberosServerProtocol(Protocol):
+    def connectionMade(self):
+        self.transport.write("hello\r\n")
+        self.transport.loseConnection()
 
 
-def main():
-    s = socket.socket()
-    s.bind((socket.gethostname(), 8888))
-    s.listen(5)
-    print("Listening on 8888...")
-    (c, caddr) = s.accept()
-    print("Connection from " + caddr[0])
-    req = loads(c.recv(2048))
-    print("User ID received: " + str(req.user_id))
-    c.close()
-    s.close()
-    return 0
+class KerberosServer(Factory):
+    protocol = KerberosServerProtocol
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    print("Listening on 8888...")
+    ep = TCP4ServerEndpoint(reactor, 8888)
+    ep.listen(KerberosServer())
+    reactor.run()

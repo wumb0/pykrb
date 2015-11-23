@@ -1,18 +1,16 @@
 """ This is the client implementation for the kerberos authentication model """
-from datetime import datetime, timedelta
 import sys
-from kerberos import *
-import socket
-from pickle import loads, dumps
+from krb import *
+from utils import register
 
 def main():
+    try:
+        register("kdc.db", "dad", "password", "example.com")
+    except: pass
     dad = TGTRequest()
-    dad.user_id = 69
-    s = socket.socket()
-    s.connect((socket.gethostname(), 8888))
-    pick = dumps(dad)
-    s.send(str(pick))
-    s.close()
+    dad.user_id = "dad@EXAMPLE.COM"
+    dad.tgs_id = "TGS"
+    dad.send(("127.0.0.1", 8888))
 
 
 if __name__ == '__main__':

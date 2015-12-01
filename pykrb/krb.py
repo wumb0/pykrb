@@ -3,6 +3,7 @@ from struct import pack, unpack
 from Crypto import Random
 from utils import *
 import socket
+from base64 import b64encode as b64e
 
 """ Packet Types """
 TGT_REQ  = 0
@@ -149,8 +150,7 @@ class ServiceTicket():
     timestamp = datetime.now()
 
     def __init__(self, blob=None, client_id="", svc_id="", net_addr='0.0.0.0',
-                 valid_until=datetime.now() + timedelta(days=1), session_key=Random.new().read(32)
-):
+                 valid_until=datetime.now() + timedelta(days=1), session_key=Random.new().read(32)):
         if blob:
             client_id_len, = unpack("!h", blob[:2])
             self.client_id = blob[2:client_id_len+2]
@@ -206,7 +206,7 @@ class ServiceSessionKey():
         p += pack("!I", int(self.valid_until.strftime("%s")))
         p += pack("!I", int(self.timestamp.strftime("%s")))
         p += self.session_key
-        p  = pack("!b", TGS_SESS_KEY) + encrypt_data(p, key)
+        p  = pack("!b", SVC_SESS_KEY) + encrypt_data(p, key)
         sock.sendto(p, addr)
 
 class KrbError():

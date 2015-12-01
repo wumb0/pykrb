@@ -4,7 +4,7 @@ from twisted.internet.protocol import DatagramProtocol
 from twisted.internet import reactor
 from kdc import *
 from utils import *
-from os import urandom
+from Crypto import Random
 
 class KerberosAuthServerProtocol(DatagramProtocol):
     def datagramReceived(self, data, addr):
@@ -34,11 +34,11 @@ class KerberosAuthServerProtocol(DatagramProtocol):
             skey.send(sock, client.secret_key_raw, addr)
             tgt.send(sock, self.tgs.secret_key_raw, addr)
 
-        if dtype == CLI_AUTH:
+        elif dtype == CLI_AUTH:
             print("Got cli_auth")
             self.clients[addr[0]]["CLI_AUTH_BLOB"] = data[1:]
 
-        if dtype == SVC_TKT_REQ:
+        elif dtype == SVC_TKT_REQ:
             print("Got svc tkt req")
             try:
                 auth = Authenticator(blob=decrypt_data(self.clients[addr[0]]["CLI_AUTH_BLOB"], self.clients[addr[0]]["TGT"].session_key))
@@ -67,7 +67,7 @@ class KerberosAuthServerProtocol(DatagramProtocol):
                 svctkt.send(sock, svc.secret_key_raw, addr)
                 svc_sess_key.send(sock, self.clients[addr[0]]["TGT"].session_key, addr)
 
-        if dtype == TGT_RESP:
+        elif dtype == TGT_RESP:
             print("Got tgt resp")
             try:
                 self.clients[addr[0]]["TGT"] = TGT(blob=decrypt_data(data[1:], self.tgs.secret_key_raw))
@@ -75,18 +75,22 @@ class KerberosAuthServerProtocol(DatagramProtocol):
                 KrbError("Cannot decrypt received TGT").send(sock, addr)
 
         else:
+            print("Unknown packet type: " + str(dtype))
             KrbError("Unknown packet type").send(sock, addr)
 
-    def __init__(self, realm, servicedbfile="kdc.db"):
+    def __init__(self, realm, kdcfile):
         self.clients = {}
-        self.session = CreateAndGetSession(servicedbfile)
+        self.session = CreateAndGetSession(kdcfile)
         try:
             tgs = self.session.query(KDC).filter_by(id=1).one()
         except:
-            tgs = register(servicedbfile, "TGS", urandom(32), realm)
+            tgs = register(kdcfile, "TGS", Random.new().read(32), realm)
         self.tgs = tgs
 
+class AuthServer(object):
+    def __init__(self, realm, interface='0.0.0.0', port=8888, kdcfile='kdc.db'):
+        reactor.listenUDP(port, KerberosAuthServerProtocol(realm, kdcfile), interface=interface)
+        reactor.run()
+
 if __name__ == '__main__':
-    print("Listening on 8888...")
-    reactor.listenUDP(8888, KerberosAuthServerProtocol("example.com"))
-    reactor.run()
+    AuthServer("example.com")

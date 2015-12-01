@@ -44,12 +44,11 @@ class TGTRequest():
 
 """ server response functions """
 class TGSSessionKey():
-    tgs_id = "TGS"
-    valid_until= datetime.now() + timedelta(days=1)
+
     timestamp = datetime.now()
 
-    def __init__(self, blob=None):
-        self.session_key = Random.new().read(32)
+    def __init__(self, blob=None, tgs_id="TGS", valid_until = datetime.now() + timedelta(days=1),
+                 session_key=Random.new().read(32)):
         if blob:
             tgs_id_len, = unpack("!h", blob[:2])
             self.tgs_id = blob[2:tgs_id_len+2]
@@ -57,6 +56,11 @@ class TGSSessionKey():
             self.valid_until = datetime.fromtimestamp(unpack("!I", cursor[:4])[0])
             self.timestamp = datetime.fromtimestamp(unpack("!I", cursor[4:8])[0])
             self.session_key = cursor[8:40]
+        else:
+            self.session_key = session_key
+            self.tgs_id = tgs_id
+            self.valid_until = valid_until
+
 
 
     def send(self, sock, key, addr):
@@ -72,7 +76,7 @@ class TGT():
     timestamp = datetime.now()
 
     def __init__(self, blob=None, client_id="", tgs_id="TGS", net_addr='0.0.0.0',
-                 valid_until=datetime.now() + timedelta(days=1), session_key=""):
+                 valid_until=datetime.now() + timedelta(days=1), session_key=Random.new().read(32)):
         if blob:
             client_id_len, = unpack("!h", blob[:2])
             self.client_id = blob[2:client_id_len+2]
@@ -124,27 +128,92 @@ class Authenticator():
 
 
 class ServiceTicketRequest():
-    def __init__(self, blob=None, svc_name="", lifetime=datetime.now() + timedelta(days=1)):
+    def __init__(self, blob=None, svc_id="", lifetime=datetime.now() + timedelta(days=1)):
         if blob:
-            svc_name_len, = unpack("!h", blob[:2])
-            self.svc_name = blob[2:svc_name_len+2]
-            self.lifetime = datetime.fromtimestamp(unpack("!I", blob[svc_name_len+2:svc_name_len+6])[0])
+            svc_id_len, = unpack("!h", blob[:2])
+            self.svc_id = blob[2:svc_id_len+2]
+            self.lifetime = datetime.fromtimestamp(unpack("!I", blob[svc_id_len+2:svc_id_len+6])[0])
         else:
             self.lifetime = lifetime
-            self.svc_name = svc_name
+            self.svc_id = svc_id
 
     def send(self, sock, addr):
         p  = pack("!b", SVC_TKT_REQ)
-        p += pack("!h", len(self.svc_name))
-        p += self.svc_name
+        p += pack("!h", len(self.svc_id))
+        p += self.svc_id
         p += pack("!I", int(self.lifetime.strftime("%s")))
         sock.sendto(p, addr)
 
 
-class ServiceSessionKey():
-    pass
-
 class ServiceTicket():
+    timestamp = datetime.now()
+
+    def __init__(self, blob=None, client_id="", svc_id="", net_addr='0.0.0.0',
+                 valid_until=datetime.now() + timedelta(days=1), session_key=Random.new().read(32)
+):
+        if blob:
+            client_id_len, = unpack("!h", blob[:2])
+            self.client_id = blob[2:client_id_len+2]
+            cursor = blob[client_id_len+2:]
+            svc_id_len, = unpack("!h", cursor[:2])
+            self.svc_id = cursor[2:svc_id_len+2]
+            cursor = cursor[svc_id_len+2:]
+            self.net_addr = socket.inet_ntoa(cursor[:4])
+            self.valid_until = datetime.fromtimestamp(unpack("!I", cursor[4:8])[0])
+            self.timestamp = datetime.fromtimestamp(unpack("!I", cursor[8:12])[0])
+            self.session_key = cursor[12:44]
+        else:
+            self.client_id = client_id
+            self.svc_id = svc_id
+            self.net_addr = net_addr
+            self.valid_until = valid_until
+            self.session_key = session_key
+
+    def send(self, sock, key, addr):
+        p  = pack("!h", len(self.client_id))
+        p += self.client_id
+        p += pack("!h", len(self.svc_id))
+        p += self.svc_id
+        p += socket.inet_aton(self.net_addr)
+        p  = str(p)
+        p += pack("!I", int(self.valid_until.strftime("%s")))
+        p += pack("!I", int(self.timestamp.strftime("%s")))
+        p += self.session_key
+        p  = pack("!b", SVC_TKT_RESP) + encrypt_data(p, key)
+        sock.sendto(p, addr)
+
+class ServiceSessionKey():
+    timestamp = datetime.now()
+
+    def __init__(self, blob=None, svc_id="", valid_until=datetime.now() + timedelta(days=1),
+                 session_key=Random.new().read(32)):
+        if blob:
+            svc_id_len, = unpack("!h", blob[:2])
+            self.svc_id = blob[2:svc_id_len+2]
+            cursor = blob[svc_id_len+2:]
+            self.valid_until = datetime.fromtimestamp(unpack("!I", cursor[:4])[0])
+            self.timestamp = datetime.fromtimestamp(unpack("!I", cursor[4:8])[0])
+            self.session_key = cursor[8:40]
+        else:
+            self.svc_id = svc_id
+            self.valid_until = valid_until
+            self.session_key = session_key
+
+
+    def send(self, sock, key, addr):
+        p  = pack("!h", len(self.svc_id))
+        p += str(self.svc_id)
+        p += pack("!I", int(self.valid_until.strftime("%s")))
+        p += pack("!I", int(self.timestamp.strftime("%s")))
+        p += self.session_key
+        p  = pack("!b", TGS_SESS_KEY) + encrypt_data(p, key)
+        sock.sendto(p, addr)
 
 class KrbError():
-    pass
+    def __init__(self, error="General failure"):
+        self.error = error
+
+    def send(self, sock, addr):
+        p  = pack("!b", KRB_ERR)
+        p  += self.error
+        sock.sendto(p, addr)

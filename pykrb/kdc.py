@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_property
+from base64 import b64decode
 
 Base = declarative_base()
 class KDC(Base):
@@ -15,6 +16,10 @@ class KDC(Base):
     @hybrid_property
     def name_realm(self):
         return self.name + "@" + self.realm
+
+    @hybrid_property
+    def secret_key_raw(self):
+        return b64decode(self.secret_key)
 
 def CreateAndGetSession(servicedbfile):
     engine = create_engine("sqlite:///" + servicedbfile)

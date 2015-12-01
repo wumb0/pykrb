@@ -5,7 +5,6 @@ from utils import *
 import socket
 from hashlib import sha256
 from getpass import getpass
-from base64 import b64decode as b64d
 
 def main():
     try:
@@ -24,8 +23,17 @@ def main():
     sock.sendto(tgt_enc, addr)
     auth = Authenticator(user_id=dad.user_id)
     auth.send(sock, sess.session_key, addr)
-    svc_req = ServiceTicketRequest(svc_name="HTTP")
+    svc_req = ServiceTicketRequest(svc_id="HTTP@EXAMPLE.COM")
     svc_req.send(sock, addr)
+    svc_tkt = sock.recv(1024)
+    svcsess = ServiceSessionKey(blob=decrypt_data(sock.recv(1024)[1:], sess.session_key))
+    saddr = ("127.0.0.1", 8889)
+    auth = Authenticator(user_id=dad.user_id)
+    auth.send(sock, svcsess.session_key, saddr)
+    sock.sendto(svc_tkt, saddr)
+    svcauth = Authenticator(blob=decrypt_data(sock.recv(1024)[1:], svcsess.session_key))
+    print(svcauth.user_id)
+
 
 
 if __name__ == '__main__':

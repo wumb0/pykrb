@@ -1,42 +1,20 @@
 """ This is the client implementation for the kerberos authentication model """
-from krb import *
-from utils import *
+from krb import TGSSessionKey, TGTRequest, Authenticator, ServiceSessionKey, \
+    ServiceTicketRequest, TGT_RESP, TGS_SESS_KEY, SVC_SESS_KEY, SVC_TKT_RESP, KRB_ERR
+from utils import decrypt_data
 import socket
+from base64 import b64encode
 from hashlib import sha256
 from getpass import getpass
 from struct import unpack, pack
 from select import select
 
-def main():
-    try:
-        register("kdc.db", "dad", "password", "example.com")
-    except: pass
-    dad = TGTRequest()
-    dad.tgs_id = "TGS"
-    dad.user_id = "dad@EXAMPLE.COM"
-    sock = socket.socket(type=socket.SOCK_DGRAM)
-    addr = ("127.0.0.1", 8888)
-    dad.send(sock, addr)
-    #c = sha256(getpass("Password: ")+"dad@EXAMPLE.COM")
-    c = sha256("passworddad@EXAMPLE.COM")
-    sess = TGSSessionKey(blob=decrypt_data(sock.recv(1024)[1:], c.digest()))
-    tgt_enc = sock.recv(1024)
-    sock.sendto(tgt_enc, addr)
-    auth = Authenticator(user_id=dad.user_id)
-    auth.send(sock, sess.session_key, addr)
-    svc_req = ServiceTicketRequest(svc_id="HTTP@EXAMPLE.COM")
-    svc_req.send(sock, addr)
-    svc_tkt = sock.recv(1024)
-    svcsess = ServiceSessionKey(blob=decrypt_data(sock.recv(1024)[1:], sess.session_key))
-    saddr = ("127.0.0.1", 8889)
-    auth = Authenticator(user_id=dad.user_id)
-    auth.send(sock, svcsess.session_key, saddr)
-    sock.sendto(svc_tkt, saddr)
-    svcauth = Authenticator(blob=decrypt_data(sock.recv(1024)[1:], svcsess.session_key))
-    print(svcauth.user_id)
-
 class Client(object):
+    """Client object
+       Inhertis: object
+    """
     def __init__(self, name, realm, auth_ip, auth_port, auth_id="TGS"):
+        """Initializes the client object"""
         self.sock = socket.socket(type=socket.SOCK_DGRAM)
         self.name = name
         self.realm = realm.upper()
@@ -50,6 +28,7 @@ class Client(object):
         self.stkt = None
 
     def kinit(self, password=None):
+        """Communicates with the Auth server to get the TGT and TGS Session key"""
         if not password:
             password = getpass("Kinit password: ")
         self.secret_key = sha256(password+self.name +"@"+self.realm.upper()).digest()
@@ -67,6 +46,7 @@ class Client(object):
                 self.tgt = pack("!b", i[0]) + i[1]
 
     def request_svc_tkt(self, svc_name, svc_realm):
+        """Communicates with the TGS to get the service ticket and the service session key"""
         if not self.ksession or not self.tgt:
             raise KrbException("TGS Session key or TGT are blank, run kinit")
         self.sock.sendto(self.tgt, self.auth_addr)
@@ -84,6 +64,7 @@ class Client(object):
                 self.stkt = pack("!b", SVC_TKT_RESP) + i[1]
 
     def app_auth(self, svc_ip, svc_port):
+        """Authenticates to a requested application"""
         saddr = (svc_ip, svc_port)
         if not self.stkt or not self.ssession:
             raise KrbException("Service session key or ticket are blank, run request_svc_tkt")
@@ -93,8 +74,9 @@ class Client(object):
         authblob = self.recv(saddr)
         self.svcauth = Authenticator(blob=decrypt_data(authblob[1], self.ssession.session_key))
 
-    def recv(self, addr, bytes=1024):
-        inp = select([self.sock], [], [], 5)
+    def recv(self, addr, bytes=1024, timeout=5):
+        """Custom receive function that has a timeout and error handling"""
+        inp = select([self.sock], [], [], timeout)
         if inp[0]:
             data = self.sock.recv(bytes)
             dtype, = unpack("!b", data[0])
@@ -106,6 +88,7 @@ class Client(object):
             raise KrbException("Server response timeout")
 
     def export_keyfile(self, filename=None):
+        """Exports the user's information to a keyfile"""
         fname = "{}.{}-pykrb.key".format(self.name, self.realm)
         if not self.secret_key:
             self.secret_key = sha256(getpass("Kinit password: ")+self.name +"@"+self.realm.upper()).digest()
@@ -115,11 +98,7 @@ class Client(object):
             f.write("|".join([self.service_name, self.realm, b64encode(self.secret_key)]))
 
 class KrbException(Exception):
+    """Basic custom exception for the client library
+       Inherits: Exception
+    """
     pass
-
-if __name__ == '__main__':
-    cli = Client("dad", "example.com", "127.0.0.1", 8888)
-    cli.kinit("password")
-    cli.request_svc_tkt("HTTP", cli.realm)
-    cli.app_auth('127.0.0.1', 8889)
-    print("Service name from service authenticator: " + cli.svcauth.user_id)

@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 from struct import pack, unpack
 from Crypto import Random
-from utils import *
+from utils import encrypt_data
 import socket
-from base64 import b64encode as b64e
 
 """ Packet Types """
-TGT_REQ  = 0
+TGT_REQ = 0
 TGS_SESS_KEY = 1
 TGT_RESP = 2
 CLI_AUTH = 3
@@ -15,14 +14,17 @@ SVC_TKT_RESP = 5
 SVC_SESS_KEY = 6
 KRB_ERR = 99
 
-""" client request functions """
-class TGTRequest():
+class TGTRequest(object):
+    """Ticket Granting Ticket Request class
+       Inherits: object
+    """
     user_id = ""
     tgs_id = "TGS"
     net_addr = "0.0.0.0"
     req_validity = datetime.now() + timedelta(days=1)
 
     def __init__(self, blob=None):
+        """Initializes a TGT Request from a binary blob"""
         if blob:
             user_id_len, = unpack("!h", blob[:2])
             self.user_id = blob[2:user_id_len+2]
@@ -34,6 +36,7 @@ class TGTRequest():
             self.req_validity = datetime.fromtimestamp(unpack("!I", cursor[4:8])[0])
 
     def send(self, sock, addr):
+        """Creates a binary blob to send over the wire and then sends it unencrypted"""
         p  = pack("!b", TGT_REQ)
         p += pack("!h", len(self.user_id))
         p += self.user_id
@@ -43,13 +46,15 @@ class TGTRequest():
         p += pack("!I", int(self.req_validity.strftime("%s")))
         sock.sendto(p, addr)
 
-""" server response functions """
-class TGSSessionKey():
-
+class TGSSessionKey(object):
+    """Ticket Granting Ticket session key class
+       Inherits: object
+    """
     timestamp = datetime.now()
 
     def __init__(self, blob=None, tgs_id="TGS", valid_until = datetime.now() + timedelta(days=1),
                  session_key=Random.new().read(32)):
+        """Initializes a TGS session key from a binary blob OR arguments"""
         if blob:
             tgs_id_len, = unpack("!h", blob[:2])
             self.tgs_id = blob[2:tgs_id_len+2]
@@ -62,9 +67,8 @@ class TGSSessionKey():
             self.tgs_id = tgs_id
             self.valid_until = valid_until
 
-
-
     def send(self, sock, key, addr):
+        """Creates a binary blob to send over the wire and then sends it encrypted"""
         p  = pack("!h", len(self.tgs_id))
         p += str(self.tgs_id)
         p += pack("!I", int(self.valid_until.strftime("%s")))
@@ -73,11 +77,15 @@ class TGSSessionKey():
         p  = pack("!b", TGS_SESS_KEY) + encrypt_data(p, key)
         sock.sendto(p, addr)
 
-class TGT():
+class TGT(object):
+    """Ticket Granting Ticket class
+       Inherits: object
+    """
     timestamp = datetime.now()
 
     def __init__(self, blob=None, client_id="", tgs_id="TGS", net_addr='0.0.0.0',
                  valid_until=datetime.now() + timedelta(days=1), session_key=Random.new().read(32)):
+        """Initializes a TGT from a binary blob OR arguments"""
         if blob:
             client_id_len, = unpack("!h", blob[:2])
             self.client_id = blob[2:client_id_len+2]
@@ -97,6 +105,7 @@ class TGT():
             self.session_key = session_key
 
     def send(self, sock, key, addr):
+        """Creates a binary blob to send over the wire and then sends it encrypted"""
         p  = pack("!h", len(self.client_id))
         p += self.client_id
         p += pack("!h", len(self.tgs_id))
@@ -109,10 +118,14 @@ class TGT():
         p  = pack("!b", TGT_RESP) + encrypt_data(p, key)
         sock.sendto(p, addr)
 
-class Authenticator():
+class Authenticator(object):
+    """Client/Service authenticator class
+       Inherits: object
+    """
     timestamp = datetime.now()
 
     def __init__(self, blob=None, user_id=""):
+        """Initializes a client authenticator from a binary blob OR arguments"""
         if blob:
             user_id_len, = unpack("!h", blob[:2])
             self.user_id = blob[2:user_id_len+2]
@@ -121,6 +134,7 @@ class Authenticator():
             self.user_id = user_id
 
     def send(self, sock, key, addr):
+        """Creates a binary blob to send over the wire and then sends it encrypted"""
         p  = pack("!h", len(self.user_id))
         p += self.user_id
         p += pack("!I", int(self.timestamp.strftime("%s")))
@@ -128,8 +142,12 @@ class Authenticator():
         sock.sendto(p, addr)
 
 
-class ServiceTicketRequest():
+class ServiceTicketRequest(object):
+    """Service ticket request class
+       Inherits: object
+    """
     def __init__(self, blob=None, svc_id="", lifetime=datetime.now() + timedelta(days=1)):
+        """Initializes a service ticket request from a binary blob OR arguments"""
         if blob:
             svc_id_len, = unpack("!h", blob[:2])
             self.svc_id = blob[2:svc_id_len+2]
@@ -139,6 +157,7 @@ class ServiceTicketRequest():
             self.svc_id = svc_id
 
     def send(self, sock, addr):
+        """Creates a binary blob to send over the wire and then sends it unencrypted"""
         p  = pack("!b", SVC_TKT_REQ)
         p += pack("!h", len(self.svc_id))
         p += self.svc_id
@@ -146,11 +165,15 @@ class ServiceTicketRequest():
         sock.sendto(p, addr)
 
 
-class ServiceTicket():
+class ServiceTicket(object):
+    """Service ticket class
+       Inherits: object
+    """
     timestamp = datetime.now()
 
     def __init__(self, blob=None, client_id="", svc_id="", net_addr='0.0.0.0',
                  valid_until=datetime.now() + timedelta(days=1), session_key=Random.new().read(32)):
+        """Initializes a service ticket from a binary blob OR arguments"""
         if blob:
             client_id_len, = unpack("!h", blob[:2])
             self.client_id = blob[2:client_id_len+2]
@@ -170,6 +193,7 @@ class ServiceTicket():
             self.session_key = session_key
 
     def send(self, sock, key, addr):
+        """Creates a binary blob to send over the wire and then sends it encrypted"""
         p  = pack("!h", len(self.client_id))
         p += self.client_id
         p += pack("!h", len(self.svc_id))
@@ -182,11 +206,15 @@ class ServiceTicket():
         p  = pack("!b", SVC_TKT_RESP) + encrypt_data(p, key)
         sock.sendto(p, addr)
 
-class ServiceSessionKey():
+class ServiceSessionKey(object):
+    """Service session key class
+       Inherits: object
+    """
     timestamp = datetime.now()
 
     def __init__(self, blob=None, svc_id="", valid_until=datetime.now() + timedelta(days=1),
                  session_key=Random.new().read(32)):
+        """Initializes a service session key from a binary blob OR arguments"""
         if blob:
             svc_id_len, = unpack("!h", blob[:2])
             self.svc_id = blob[2:svc_id_len+2]
@@ -199,8 +227,8 @@ class ServiceSessionKey():
             self.valid_until = valid_until
             self.session_key = session_key
 
-
     def send(self, sock, key, addr):
+        """Creates a binary blob to send over the wire and then sends it encrypted"""
         p  = pack("!h", len(self.svc_id))
         p += str(self.svc_id)
         p += pack("!I", int(self.valid_until.strftime("%s")))
@@ -209,11 +237,16 @@ class ServiceSessionKey():
         p  = pack("!b", SVC_SESS_KEY) + encrypt_data(p, key)
         sock.sendto(p, addr)
 
-class KrbError():
+class KrbError(object):
+    """Error response class
+       Inherits: object
+    """
     def __init__(self, error="General failure"):
+        """Initializes a krb error with a default or user defined message"""
         self.error = error
 
     def send(self, sock, addr):
+        """Creates a binary blob to send over the wire and then sends it unencrypted"""
         p  = pack("!b", KRB_ERR)
-        p  += self.error
+        p += self.error
         sock.sendto(p, addr)

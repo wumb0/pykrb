@@ -12,7 +12,7 @@ class KDC(Base):
     name = Column(String(200), nullable=False, unique=True)
     realm = Column(String(200), nullable=False)
     secret_key = Column(String(500))
-    key_exp = Column(DateTime)
+    key_exp = Column(DateTime())
 
     @hybrid_property
     def name_realm(self):
